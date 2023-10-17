@@ -1,5 +1,5 @@
 import os
-from dotenv import load_dotenv
+# from dotenv import load_dotenv
 
 from langchain import PromptTemplate
 from langchain.agents import initialize_agent, Tool
@@ -16,13 +16,12 @@ from typing import Type
 from bs4 import BeautifulSoup
 import requests
 import json
-#import streamlit as st
+import streamlit as st
 from langchain.callbacks import get_openai_callback
 from fastapi import FastAPI
 
-load_dotenv()
-browserless_api_key = os.getenv('BROWSERLESS_API_KEY')
-serper_api_key = os.getenv('SERPER_API_KEY')
+## Load api keys from .env file
+#_ = load_dotenv()
 
 # 1. Tools for searching
 def search(query):
@@ -36,7 +35,7 @@ def search(query):
     })
 
     headers = {
-        'X-API-KEY': serper_api_key,
+        'X-API-KEY': os.environ["SERPER_API_KEY"],
         'Content-type': 'application/json'
     }
 
@@ -69,6 +68,7 @@ def scrape_website(objective: str, url: str):
     }
     data_json = json.dumps(data)
 
+    browserless_api_key = os.environ["BROWSERLESS_API_KEY"]
     post_url = f"https://chrome.browserless.io/content?token={browserless_api_key}"
 
     response = requests.post(post_url, headers=headers, data=data_json)
@@ -122,7 +122,7 @@ def summarize(objective, content):
 # scraped_output = scrape_website('company names', 'https://www.technologyreview.com/2023/10/05/1080952/climate-tech-companies-to-watch/')
 # print(scraped_output)
 
-# Wrap my functions as langchain tools
+# Make my functions as langchain tools
 class ScrapeWebsiteInput(BaseModel):
     """Inputs for scrape_website"""
     objective: str = Field(
@@ -141,78 +141,87 @@ class ScrapeWebsiteTool(BaseTool):
         raise NotImplementedError("error here")
 
 # 3. Create langchain agent with the tools above
-tools = [
-    Tool(
-        name="Search",
-        func=search,
-        description="useful for when you need to answer questions about current events, data. You should ask targeted questions"
-    ),
-    ScrapeWebsiteTool()
-]
-
-system_message = SystemMessage(
-    content="""
-    You are a world class researcher, who can do detailed research on any topic and produce fact-based results. 
-    You do not make things up. You will try as hard as possible to gather facts & data to back up the research.
-            
-    Please make sure you complete the objective above with the following rules:
-    1/ You should do enough research to gather as much information as possible about the objective.
-    2/ If there are url of relevant links & articles, you will scrape it to gather more information.
-    3/ After scraping & search, you should think "is there any new things i should search & scrape based on the data I collected to increase research quality?" If answer is yes, continue; But don't do this more than 3 iteratins.
-    4/ You should not make things up, you should only write facts & data that you have gathered.
-    5/ In the final output, You should include all reference data & links to back up your research; You should include all reference data & links to back up your research.
-    6/ In the final output, You should include all reference data & links to back up your research; You should include all reference data & links to back up your research.
-    """
-)
-
-agent_kwargs = {
-    "extra_prompt_messages": [MessagesPlaceholder(variable_name="memory")],
-    "system_message": system_message
-}
-
-llm = ChatOpenAI(temperature=0, model="gpt-3.5-turbo-16k")
-
-memory = ConversationSummaryBufferMemory(
-    memory_key="memory",
-    return_messages=True,
-    llm=llm,
-    max_token_limit=1000
-)
-
-agent = initialize_agent(
-    tools,
-    llm,
-    agent=AgentType.OPENAI_FUNCTIONS,
-    agent_kwargs=agent_kwargs,
-    memory=memory,
-    verbose=True
-)
+def create_agent():
+    tools = [
+        Tool(
+            name="Search",
+            func=search,
+            description="useful for when you need to answer questions about current events, data. You should ask targeted questions"
+        ),
+        ScrapeWebsiteTool()
+    ]
+    
+    system_message = SystemMessage(
+        content="""
+        You are a world class researcher, who can do detailed research on any topic and produce fact-based results. 
+        You do not make things up. You will try as hard as possible to gather facts & data to back up the research.
+                
+        Please make sure you complete the objective above with the following rules:
+        1/ You should do enough research to gather as much information as possible about the objective.
+        2/ If there are url of relevant links & articles, you will scrape it to gather more information.
+        3/ After scraping & search, you should think "is there any new things i should search & scrape based on the data I collected to increase research quality?" If answer is yes, continue; But don't do this more than 3 iteratins.
+        4/ You should not make things up, you should only write facts & data that you have gathered.
+        5/ In the final output, You should include all reference data & links to back up your research; You should include all reference data & links to back up your research.
+        6/ In the final output, You should include all reference data & links to back up your research; You should include all reference data & links to back up your research.
+        """
+    )
+    
+    agent_kwargs = {
+        "extra_prompt_messages": [MessagesPlaceholder(variable_name="memory")],
+        "system_message": system_message
+    }
+    
+    llm = ChatOpenAI(temperature=0, model="gpt-3.5-turbo-16k")
+    
+    memory = ConversationSummaryBufferMemory(
+        memory_key="memory",
+        return_messages=True,
+        llm=llm,
+        max_token_limit=1000
+    )
+    
+    agent = initialize_agent(
+        tools,
+        llm,
+        agent=AgentType.OPENAI_FUNCTIONS,
+        agent_kwargs=agent_kwargs,
+        memory=memory,
+        verbose=True
+    )
+    return agent
 
 # 4. Use streamlit to create a web app
-# def main():
-#     st.set_page_config(page_title="AI Research Agent", page_icon="🛻")
-#     st.header("AI Research Agent")
+def main():
+    st.set_page_config(page_title="AI Research Agent", page_icon="🛻")
+    st.header("AI Research Agent")
 
-#     query = st.text_input("Please specify your research topic:")
-#     if query: 
-#         st.write("Doing research for: ", query)
+    # Get api keys from user inputs
+    os.environ["SERPER_API_KEY"] = st.text_input("Serper API key:")
+    os.environ["BROWSERLESS_API_KEY"] = st.text_input("Browserless API key:")
+    os.environ["OPENAI_API_KEY"] = st.text_input("OpenAI API key:")
 
-#         with get_openai_callback() as cb:            
-#             result = agent({"input": query})
-#             print(cb)
-#             st.info(result['output'])
+    query = st.text_input("Please specify your research topic:")
+    if query: 
+        st.write("Doing research for: ", query)
 
-# if __name__ == '__main__':
-#     main()
+        agent = create_agent()
 
-# 5. Make this app as an API via FastAPI
-app = FastAPI()
+        with get_openai_callback() as cb:            
+            result = agent({"input": query})
+            st.info(result['output'])
+            st.info(cb)
 
-class Query(BaseModel):
-    query: str
+if __name__ == '__main__':
+    main()
 
-@app.post('/')
-def researchAgent(query: Query):
-    query = query.query
-    result = agent({'input': query})
-    return result['output']
+# # 5. Make this app as an API via FastAPI
+# app = FastAPI()
+
+# class Query(BaseModel):
+#     query: str
+
+# @app.post('/')
+# def researchAgent(query: Query):
+#     query = query.query
+#     result = agent({'input': query})
+#     return result['output']
