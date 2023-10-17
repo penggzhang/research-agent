@@ -16,7 +16,7 @@ from typing import Type
 from bs4 import BeautifulSoup
 import requests
 import json
-import streamlit as st
+#import streamlit as st
 from langchain.callbacks import get_openai_callback
 from fastapi import FastAPI
 
